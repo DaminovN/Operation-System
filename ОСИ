@@ -1,0 +1,34 @@
+Утилиты, 3 вида.Perl, Sed, Awk.
+Sed - можно текст менять. ls / | sed 's/u/Z/g' ----- читает построчтно, заменить маленьку u на большую Z и вывод на консоль.
+                                      |     |
+				      |     |
+                   substitute ---------     ------------global
+еще в начале можно написать интервал, 
+1,2s#/usr/#/bin/#/
+со строки 1 по 2.
+
+sed '/abc/s/bc/def/' ---- если в строке есть abc то замени bc на def.
+
+помимо 's' есть 'd'.
+d - delete
+
+sed /abc/d удалить все строки с abc.
+
+cat b.cpp > a.cpp это append
+cat b.cpp >> a.cpp это перезапись.
+
+Подключение между консолями, с помощью утилиты SSH. 
+
+ssh student@study.zoidberg.md  -- подключение
+пароль 123454321
+
+scp .ssh/id_rsa student@study.zoidberg.md:daminov.key -- скинуть свой ключь(делать не своей системе).
+
+ssh daminov@study.zoidberg.md -- enter to your rep in server (no password)
+
+ls | grep '.key$' | sed '.s/.key$//' | while read s ; do mkdir /home/$S/.ssh/ ; done 
+
+
+ls | grep '.key$' | sed '.s/.key$//' | while read s ; do cp $S.key /home/$S/.ssh/ ; chown - R $S:$S /home/$S/.ssh ; done 
+
+chmod +x file -- make file run as bash

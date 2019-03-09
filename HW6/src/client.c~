@@ -1,0 +1,154 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <unistd.h>
+
+#include "local.h"
+#include "multiplex.h"
+
+#define MIN(a, b) \
+    a < b ? a : b
+
+int scanf_str_s(char* buf, size_t buf_size)
+{
+    char c;
+    int char_read = 0;
+    for (size_t i = 0; i < buf_size - 1; ++i)
+    {
+        if ((c = getchar()) == EOF && !char_read)
+        {
+            return -1;
+        }
+        buf[char_read] = c;
+        if (c == '\n' || c == EOF)
+        {
+            break;
+        }
+        ++char_read;
+    }
+    buf[char_read] = '\0';
+    return char_read;
+}
+
+int main(int argc, char* argv[])
+{
+    unsigned int ip;
+    if (argc > 1)
+    {
+        ip = 0;
+        unsigned int pos = 0;
+        for (size_t i = 0; i < 4; ++i)
+        {
+            unsigned int byte = 0;
+            do
+            {
+                if (pos >= strlen(argv[1]) || argv[1][pos] < 48 || argv[1][pos] > 57)
+                {
+                    fprintf(stderr, "Wrong format of IPv4 address.\n");
+                    exit(EXIT_FAILURE);
+                }
+                byte *= 10;
+                byte += (argv[1][pos] - 48);
+                ++pos;
+            }
+            while (pos < strlen(argv[1]) && argv[1][pos] != '.');
+            ++pos;
+            if (byte > 255)
+            {
+                fprintf(stderr, "Wrong format of IPv4 address.\n");
+                exit(EXIT_FAILURE);
+            }
+            ip <<= 8;
+            ip += byte;
+        }
+    }
+    else
+    {
+        ip = INADDR_LOOPBACK;
+    }
+
+    char req_buf[BUF_SIZE];
+    char res_buf[BUF_SIZE];
+    char out_buf[BUF_SIZE];
+    
+    int sock;
+    struct sockaddr_in addr;
+    int bytes_sent, bytes_rcvd, bytes_out;
+
+    ASSIGN_HANDLE_ERROR(sock, socket(AF_INET, SOCK_STREAM, 0));
+
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(SERVER_PORT);
+    addr.sin_addr.s_addr = htonl(ip);
+    HANDLE_ERROR(connect(sock, (struct sockaddr *)&addr, sizeof(addr)));
+
+    int mxfd, fd, events_count;
+    int read_fds[MULTIPLEX_SIZE];
+
+    HANDLE_ERROR(set_nonblock(STDIN_FILENO));
+    HANDLE_ERROR(set_nonblock(sock));
+
+    ASSIGN_HANDLE_ERROR(mxfd, multiplex());
+    HANDLE_ERROR(mx_add(mxfd, STDIN_FILENO));
+    HANDLE_ERROR(mx_add(mxfd, sock));
+
+    printf("Print EOF at the begining of string to quit.\n");
+    printf("EOF in any other position will trigger sending message to server.\n");
+    printf("A new string means a new message. One message must be strongly shorter than 1024.\n\n");
+
+    while (1)
+    {
+        ASSIGN_HANDLE_ERROR(events_count, mx_wait(mxfd, read_fds, MULTIPLEX_SIZE));
+        for (size_t i = 0; i < events_count; ++i)
+        {
+            if (read_fds[i] == STDIN_FILENO)
+            {
+                if (scanf_str_s(req_buf, BUF_SIZE) < 0)
+                {
+                    close(mxfd);
+                    close(sock);
+
+                    return 0;
+                }
+                req_buf[BUF_SIZE - 1] = '\n';
+                bytes_sent = 0;
+                while (bytes_sent < BUF_SIZE)
+                {
+                    bytes_sent += send(sock, req_buf + bytes_sent, BUF_SIZE - bytes_sent, 0);
+                }
+            }
+            else
+            {
+                printf("\nReceived:\n");
+                bytes_out = 0;
+                while (bytes_out < BUF_SIZE)
+                {
+                    if ((bytes_rcvd = recv(sock, res_buf, BUF_SIZE, 0)) <= 0)
+                    {
+                        printf("\nConnection lost.\n");
+
+                        close(sock);
+                        close(mxfd);
+
+                        return 0;
+                    }
+                    memcpy(out_buf + bytes_out, res_buf, MIN(bytes_rcvd, BUF_SIZE - bytes_out));
+                    bytes_out += bytes_rcvd;
+                    if (res_buf[bytes_rcvd - 1] == '\n')
+                    {
+                        break;
+                    }
+                }
+                printf("%s\n\n", out_buf);
+            }
+        }
+    }
+
+    close(mxfd);
+    close(sock);
+
+    return 0;
+}
